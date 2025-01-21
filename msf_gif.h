@@ -409,7 +409,7 @@ static MsfGifBuffer * msf_compress_frame(void * allocContext, int width, int hei
     //allocate tlb
     int totalBits = frame.rbits + frame.gbits + frame.bbits;
     int tlbSize = (1 << totalBits) + 1;
-    uint8_t tlb[(1 << 16) + 1]; //only 64k, so stack allocating is fine
+    uint8_t * tlb = (uint8_t *) MSF_GIF_MALLOC(allocContext, (1 << 16) + 1);
 
     //generate palette
     typedef struct { uint8_t r, g, b; } Color3;
@@ -505,6 +505,8 @@ static MsfGifBuffer * msf_compress_frame(void * allocContext, int width, int hei
         }
     }
 
+    MSF_GIF_FREE(allocContext, tlb, (1 << 16) + 1);
+
     //write code for leftover index buffer contents, then the end code
     msf_put_code(&writeHead, &blockBits, msf_imin(12, msf_bit_log(lzw.len - 1)), lastCode);
     msf_put_code(&writeHead, &blockBits, msf_imin(12, msf_bit_log(lzw.len)), tableSize + 1);
@@ -594,12 +596,13 @@ int msf_gif_frame(MsfGifState * handle, uint8_t * pixelData, int centiSecondsPer
     if (pitchInBytes == 0) pitchInBytes = handle->width * 4;
     if (pitchInBytes < 0) pixelData -= pitchInBytes * (handle->height - 1);
 
-    uint8_t used[(1 << 16) + 1]; //only 64k, so stack allocating is fine
+    uint8_t *used = (uint8_t *) MSF_GIF_MALLOC(handle->customAllocatorContext, (1 << 16) + 1);
     msf_cook_frame(&handle->currentFrame, pixelData, used, handle->width, handle->height, pitchInBytes,
         msf_imin(maxBitDepth, handle->previousFrame.depth + 160 / msf_imax(1, handle->previousFrame.count)));
 
     MsfGifBuffer * buffer = msf_compress_frame(handle->customAllocatorContext, handle->width, handle->height,
         centiSecondsPerFame, handle->currentFrame, handle, used, handle->lzwMem);
+    MSF_GIF_FREE(handle->customAllocatorContext, used, (1 << 16) + 1);
     if (!buffer) { msf_free_gif_state(handle); return 0; }
     handle->listTail->next = buffer;
     handle->listTail = buffer;
